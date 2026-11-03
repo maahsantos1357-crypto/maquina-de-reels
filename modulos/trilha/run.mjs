@@ -54,13 +54,14 @@ export async function executar(estagio, ctx) {
   // mesmo provedor e mesmo pedido = reaproveita. Para forçar outra música: config "musica_nova": true.
   const metaAnt = lerJSON(path.join(pastaT, 'meta.json'), null);
   const promptAtual = prov === 'elevenlabs' ? (cfg.musica_prompt || promptMusica(cfg, linha)) : null;
-  const reaproveitar = !cfg.musica_nova && existe(loopFinal) && metaAnt?.musica && Math.abs((metaAnt.total ?? -1) - linha.total) < 0.05
+  const reaproveitar = prov !== 'sem' && !cfg.musica_nova && existe(loopFinal) && metaAnt?.musica && Math.abs((metaAnt.total ?? -1) - linha.total) < 0.05
     && metaAnt.musica.provedor === (prov === 'arquivo' ? 'arquivo' : prov) && (prov !== 'elevenlabs' || metaAnt.musica.prompt === promptAtual);
   if (reaproveitar) {
     meta.musica = { ...metaAnt.musica, reaproveitada: true };
     ctx.log('info', 'Música reaproveitada (mesma duração e mesmo pedido): só os efeitos foram refeitos.');
   } else if (prov === 'sem') {
     meta.musica = { provedor: 'sem' };
+    fs.rmSync(loopFinal, { force: true }); // sem música: não deixa a trilha de uma rodada anterior para a mixagem
   } else if (prov === 'lemo-pluck') {
     ctx.progresso('trilha', 15, 'Compondo trilha em loop (lemo-opuscar)');
     const r = python([path.join(AQUI, 'compor_lemo.py'), '--duracao', String(linha.total), '--saida', loopFinal, '--humor', HUMOR[cfg.tom] || 'didatico', '--seed', String(semente(ctx.id))]);
