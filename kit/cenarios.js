@@ -1283,3 +1283,130 @@ export function painelAviao({ largura = 1.6, altura = 0.9, numeros = true } = {}
   g.userData.enquadramentos = { geral: { pos: [0, 0, distPara(largura + 0.3, 34)], alvo: [0, 0, 0], fov: 34 } };
   return g;
 }
+
+// ---------------- casa / vida íntima ----------------
+// Quarto em diorama (duas paredes, piso de madeira, frente aberta para +Z): cama de solteiro (cabeceira em -X),
+// criado-mudo com abajur, relógio digital, livro e porta-retrato; janela com cortina na parede do fundo (lua e estrelas
+// desenhadas lá fora, ou céu de manhã); quadro/desenho colado na parede.
+//   retrato(g,w,h): desenha a foto do porta-retrato · livro: título da capa · desenho(g,w,h): papel colado na parede
+//   colcha, corParede, corPiso: cores.  userData: lugarCama (Vector3 local do colchão, onde deitar alguém),
+//   abajur.userData.acender(x 0–1), relogio.userData.atualizar(t, texto), ceu(x 0=noite 1=manhã), ancoras {retrato, abajur, janela, cama}.
+//   enquadramentos: geral, cama, criado, janela, alto.
+export function quarto({ retrato = null, livro = '', desenho = null, colcha = '#7c6fd6', corParede = '#d9d2c4', corPiso = '#b98b5e', relogio = '23:47' } = {}) {
+  const g = novo('quarto'); const P = pal();
+  const L = 5.2, A = 2.7, Pf = 4.2; // largura (X), altura, profundidade (Z)
+  const piso = caixa(L, 0.08, Pf, { raio: 0.01, material: new THREE.MeshStandardMaterial({ map: texturaTabuas(corPiso), roughness: 0.75 }) });
+  piso.position.y = -0.04; g.add(piso);
+  const mParede = mat.fosco(corParede);
+  // parede do fundo com vão de janela (4 peças) e parede lateral esquerda
+  const jx = 0.9, jy = 1.55, jl = 1.25, ja = 1.25;
+  const pedaco = (l, a, x, y) => { const c = caixa(l, a, 0.12, { raio: 0.005, material: mParede }); c.position.set(x, y, -Pf / 2); g.add(c); };
+  pedaco(L / 2 + jx - jl / 2, A, -L / 2 + (L / 2 + jx - jl / 2) / 2, A / 2);
+  pedaco(L / 2 - jx - jl / 2, A, jx + jl / 2 + (L / 2 - jx - jl / 2) / 2, A / 2);
+  pedaco(jl, jy - ja / 2, jx, (jy - ja / 2) / 2);
+  pedaco(jl, A - jy - ja / 2, jx, A - (A - jy - ja / 2) / 2);
+  const lateral = caixa(0.12, A, Pf, { raio: 0.005, material: mParede }); lateral.position.set(-L / 2, A / 2, 0); g.add(lateral);
+  const rodape = caixa(L, 0.1, 0.03, { raio: 0.005, cor: '#f2ede4' }); rodape.position.set(0, 0.05, -Pf / 2 + 0.075); g.add(rodape);
+  // janela: céu lá fora (canvas: noite com lua/estrelas ↔ manhã), caixilho e cortinas
+  let ceuX = 0;
+  const fora = telaCanvas(jl + 0.6, ja + 0.6, (c, w, h) => {
+    const noite = ['#0b1640', '#1c2f6e', '#3a4f8f']; const dia = ['#f7c59f', '#f9dcb8', '#bfe0f5'];
+    const mix = (a, b) => '#' + new THREE.Color(a).lerp(new THREE.Color(b), ceuX).getHexString();
+    const gr = c.createLinearGradient(0, 0, 0, h); [0, 0.55, 1].forEach((s, i) => gr.addColorStop(s, mix(noite[i], dia[i]))); c.fillStyle = gr; c.fillRect(0, 0, w, h);
+    const rnd = mulberry32(17);
+    c.globalAlpha = 1 - ceuX;
+    for (let i = 0; i < 70; i++) { const x = rnd() * w, y = rnd() * h * 0.8, r = 1 + rnd() * 2.6; c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill(); }
+    const lx = w * 0.66, ly = h * 0.3, lr = w * 0.13;
+    const halo = c.createRadialGradient(lx, ly, lr * 0.8, lx, ly, lr * 2.6); halo.addColorStop(0, 'rgba(255,250,220,0.55)'); halo.addColorStop(1, 'rgba(255,250,220,0)');
+    c.fillStyle = halo; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#fff8dc'; c.beginPath(); c.arc(lx, ly, lr, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(200,190,160,0.35)'; c.beginPath(); c.arc(lx - lr * 0.3, ly - lr * 0.2, lr * 0.22, 0, Math.PI * 2); c.arc(lx + lr * 0.35, ly + lr * 0.25, lr * 0.15, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = ceuX; c.fillStyle = '#fff3c8'; c.beginPath(); c.arc(w * 0.25, h * 0.85, w * 0.16, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+    // silhueta de telhados lá fora
+    c.fillStyle = mix('#0a1030', '#c98f78'); c.beginPath(); c.moveTo(0, h);
+    const tr = mulberry32(5); let x = 0; while (x < w) { const tw = 60 + tr() * 90, th = h * (0.12 + tr() * 0.14); c.lineTo(x, h - th); c.lineTo(x + tw / 2, h - th - 30); c.lineTo(x + tw, h - th); x += tw; } c.lineTo(w, h); c.fill();
+  }, { emissivo: 1.0, pxPorUnidade: 420, fundo: '#0b1640' });
+  fora.position.set(jx, jy, -Pf / 2 - 0.2); g.add(fora);
+  const mCaix = mat.plastico('#f4f1ea');
+  for (const [l, a, x, y] of [[jl + 0.1, 0.07, jx, jy + ja / 2], [jl + 0.1, 0.09, jx, jy - ja / 2], [0.07, ja, jx - jl / 2, jy], [0.07, ja, jx + jl / 2, jy], [0.04, ja, jx, jy], [jl, 0.04, jx, jy]]) {
+    const c = caixa(l, a, 0.08, { raio: 0.01, material: mCaix }); c.position.set(x, y, -Pf / 2 + 0.03); g.add(c);
+  }
+  const mCort = mat.fosco('#e9e1f2');
+  const cortinas = [];
+  for (const s of [-1, 1]) {
+    const ct = new THREE.Group(); ct.position.set(jx + s * (jl / 2 + 0.12), jy + ja / 2 + 0.25, -Pf / 2 + 0.16);
+    for (let k = 0; k < 5; k++) { const d = cilindro(0.06, ja + 0.6, { material: mCort, segs: 12 }); d.position.set(s * (k * 0.07 - 0.14), -(ja + 0.6) / 2, (k % 2) * 0.03); ct.add(d); }
+    g.add(ct); cortinas.push(ct);
+  }
+  const varao = cilindro(0.015, jl + 0.9, { material: mat.metal('#c9b48a') }); varao.rotation.z = Math.PI / 2; varao.position.set(jx, jy + ja / 2 + 0.27, -Pf / 2 + 0.16); g.add(varao);
+  // cama (comprimento em X, cabeceira em -X, encostada na parede lateral)
+  const cama = novo('cama'); const cx0 = -L / 2 + 0.06 + 1.05, cz0 = -Pf / 2 + 0.06 + 0.5 + 0.5;
+  const madeira = mat.madeira(P.madeira || '#a8774b');
+  const estrado = caixa(2.05, 0.3, 1.0, { raio: 0.03, material: madeira }); estrado.position.y = 0.25; cama.add(estrado);
+  const cabeceira = caixa(0.08, 1.0, 1.04, { raio: 0.03, material: madeira }); cabeceira.position.set(-1.02, 0.5, 0); cama.add(cabeceira);
+  const pe = caixa(0.08, 0.55, 1.04, { raio: 0.03, material: madeira }); pe.position.set(1.02, 0.28, 0); cama.add(pe);
+  const colchao = caixa(1.95, 0.18, 0.94, { raio: 0.06, cor: '#f3f0ea' }); colchao.position.y = 0.49; cama.add(colchao);
+  const texColcha = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const q = c.getContext('2d'); q.fillStyle = colcha; q.fillRect(0, 0, 256, 256); q.fillStyle = 'rgba(255,255,255,0.35)'; const r = mulberry32(3); for (let i = 0; i < 40; i++) { const x = r() * 256, y = r() * 256; q.beginPath(); for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2 - Math.PI / 2; const a2 = a + Math.PI / 5; q.lineTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9); q.lineTo(x + Math.cos(a2) * 4, y + Math.sin(a2) * 4); } q.fill(); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })();
+  const coberta = caixa(1.35, 0.06, 1.02, { raio: 0.03, material: new THREE.MeshStandardMaterial({ map: texColcha, roughness: 0.9 }) }); coberta.position.set(0.32, 0.6, 0); cama.add(coberta);
+  const dobra = caixa(0.18, 0.08, 1.03, { raio: 0.04, cor: '#f6f3ee' }); dobra.position.set(-0.32, 0.62, 0); cama.add(dobra);
+  const travesseiro = caixa(0.42, 0.13, 0.7, { raio: 0.06, cor: '#fbfaf7' }); travesseiro.position.set(-0.74, 0.64, 0); cama.add(travesseiro);
+  cama.position.set(cx0, 0, cz0); g.add(cama);
+  g.userData.lugarCama = new THREE.Vector3(cx0, 0.6, cz0);
+  // criado-mudo à direita do pé da cabeceira (em +Z da cabeceira), com abajur, relógio, livro e porta-retrato
+  const criado = novo('criado-mudo'); const crx = -L / 2 + 0.38, crz = cz0 + 0.95;
+  const movel = caixa(0.55, 0.6, 0.45, { raio: 0.03, material: madeira }); movel.position.y = 0.3; criado.add(movel);
+  const gaveta = caixa(0.45, 0.18, 0.02, { raio: 0.01, material: mat.madeira('#8a5e3a') }); gaveta.position.set(0, 0.42, 0.23); criado.add(gaveta);
+  const puxador = esfera(0.02, { cor: '#d9b54a' }); puxador.position.set(0, 0.42, 0.25); criado.add(puxador);
+  const abajur = novo('abajur');
+  const baseA = cilindro(0.07, 0.03, { material: mat.plastico('#e8dcc6') }); baseA.position.y = 0.015; abajur.add(baseA);
+  const hasteA = cilindro(0.012, 0.28, { material: mat.metal('#c9b48a') }); hasteA.position.y = 0.17; abajur.add(hasteA);
+  const mCupula = new THREE.MeshStandardMaterial({ color: '#f6e7c8', emissive: '#ffb85c', emissiveIntensity: 0, roughness: 0.8, side: THREE.DoubleSide });
+  const cupula = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 0.17, 24, 1, true), mCupula); cupula.position.y = 0.36; abajur.add(sombrear(cupula));
+  const lampada = new THREE.PointLight('#ffb35c', 0, 4.5, 1.6); lampada.position.y = 0.33; abajur.add(lampada);
+  abajur.position.set(-0.14, 0.6, -0.08); criado.add(abajur);
+  abajur.userData.acender = (x) => { mCupula.emissiveIntensity = 1.6 * x; lampada.intensity = 3.2 * x; };
+  let textoRel = relogio;
+  const rel = telaCanvas(0.12, 0.06, (c, w, h) => { c.fillStyle = '#121212'; c.fillRect(0, 0, w, h); escrever(c, textoRel, w / 2, h * 0.76, { tam: h * 0.66, peso: 800, cor: '#ff4d4d', alinhar: 'center', fonte: 'monospace' }); }, { emissivo: 1, pxPorUnidade: 1400, fundo: '#121212' });
+  const relCorpo = caixa(0.14, 0.075, 0.06, { raio: 0.01, cor: '#2a2a2a' }); relCorpo.position.set(0.16, 0.6375, 0.05); criado.add(relCorpo);
+  rel.position.set(0.16, 0.6375, 0.081); criado.add(rel);
+  const relogioCtl = { atualizar: (texto) => { if (textoRel !== texto) { textoRel = texto; rel.userData.atualizar(0, texto); } } };
+  // livro deitado
+  const capa = telaCanvas(0.17, 0.24, (c, w, h) => { c.fillStyle = '#23305a'; c.fillRect(0, 0, w, h); c.strokeStyle = '#d9b54a'; c.lineWidth = w * 0.03; c.strokeRect(w * 0.08, h * 0.06, w * 0.84, h * 0.88); paragrafo(c, (livro || '').toUpperCase(), w / 2, h * 0.32, w * 0.8, { tam: w * 0.12, peso: 800, cor: '#f2e3b0', alinhar: 'center', maxLinhas: 4, fonte: SERIFA }); }, { emissivo: 0.25, pxPorUnidade: 1600, fundo: '#23305a' });
+  const miolo = caixa(0.17, 0.035, 0.24, { raio: 0.004, cor: '#f3ead6' }); miolo.position.set(0.12, 0.6175, -0.1); miolo.rotation.y = 0.35; criado.add(miolo);
+  capa.rotation.x = -Math.PI / 2; capa.position.set(0.12, 0.6365, -0.1); capa.rotation.z = 0.35; criado.add(capa);
+  // porta-retrato (em pé, virado para +Z/+X)
+  const portaRetrato = novo('porta-retrato');
+  const moldura = caixa(0.16, 0.2, 0.02, { raio: 0.006, material: mat.madeira('#6b4428') }); moldura.position.y = 0.1; portaRetrato.add(moldura);
+  const foto = telaCanvas(0.125, 0.165, (c, w, h) => { if (retrato) retrato(c, w, h); else { c.fillStyle = '#cfd8e3'; c.fillRect(0, 0, w, h); } }, { emissivo: 0.35, pxPorUnidade: 2200, fundo: '#cfd8e3' });
+  foto.position.set(0, 0.1, 0.0115); portaRetrato.add(foto);
+  const apoio = caixa(0.02, 0.17, 0.02, { cor: '#6b4428' }); apoio.position.set(0, 0.085, -0.05); apoio.rotation.x = -0.35; portaRetrato.add(apoio);
+  portaRetrato.position.set(0.07, 0.6, 0.12); portaRetrato.rotation.y = 0.5; criado.add(portaRetrato);
+  criado.position.set(crx, 0, crz); criado.rotation.y = 0; g.add(criado);
+  // desenho colado na parede do fundo (à esquerda da janela)
+  let papel = null;
+  if (desenho) {
+    papel = telaCanvas(0.62, 0.46, (c, w, h) => desenho(c, w, h), { emissivo: 0.3, pxPorUnidade: 900, fundo: '#fbf8f0' });
+    papel.position.set(-1.0, 1.65, -Pf / 2 + 0.065); papel.rotation.z = 0.04; g.add(papel);
+    for (const [dx, dy] of [[-0.28, 0.2], [0.28, 0.2]]) { const fita = caixa(0.1, 0.03, 0.004, { cor: '#f5e6a8' }); fita.position.set(-1.0 + dx, 1.65 + dy, -Pf / 2 + 0.07); fita.rotation.z = dx > 0 ? -0.5 : 0.5; g.add(fita); }
+  }
+  // tapete
+  const tapete = new THREE.Mesh(new THREE.CircleGeometry(0.75, 40), mat.fosco('#e8d9f0')); tapete.rotation.x = -Math.PI / 2; tapete.position.set(0.4, 0.004, cz0 + 1.1); tapete.receiveShadow = true; g.add(tapete);
+  g.userData.cama = cama; g.userData.criado = criado; g.userData.abajur = abajur; g.userData.portaRetrato = portaRetrato; g.userData.relogio = relogioCtl; g.userData.cortinas = cortinas; g.userData.papel = papel;
+  g.userData.ceu = (x) => { if (Math.abs(x - ceuX) < 0.004) return; ceuX = x; fora.userData.atualizar(0, `ceu${x.toFixed(3)}`); };
+  g.userData.ancoras = { retrato: [crx + 0.07, 0.82, crz + 0.12], abajur: [crx - 0.14, 1.0, crz - 0.08], janela: [jx, jy, -Pf / 2], cama: [cx0, 0.7, cz0] };
+  g.userData.enquadramentos = {
+    geral: { pos: [0.6, 2.3, 4.6], alvo: [-0.6, 0.8, -0.6], fov: 40 },
+    cama: { pos: [0.3, 1.6, 1.9], alvo: [cx0, 0.62, cz0], fov: 36 },
+    criado: { pos: [crx + 0.55, 0.95, crz + 0.75], alvo: [crx + 0.02, 0.72, crz + 0.05], fov: 30 },
+    janela: { pos: [jx - 0.3, 1.35, 0.9], alvo: [jx, jy + 0.1, -Pf / 2], fov: 40 },
+    alto: { pos: [0.2, 5.6, 1.6], alvo: [-0.4, 0, -0.4], fov: 44 },
+  };
+  return g;
+}
+function texturaTabuas(cor) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512; const g = c.getContext('2d'); const r = mulberry32(9);
+  const base = new THREE.Color(cor);
+  for (let i = 0; i < 8; i++) { const k = 0.88 + r() * 0.2; g.fillStyle = '#' + base.clone().multiplyScalar(k).getHexString(); g.fillRect(0, i * 64, 512, 64); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, i * 64, 512, 2); const off = r() * 512; g.fillRect(off, i * 64, 2, 64); }
+  g.globalAlpha = 0.08; for (let i = 0; i < 300; i++) { g.fillStyle = r() < 0.5 ? '#000' : '#fff'; g.fillRect(r() * 512, r() * 512, 40 + r() * 80, 1); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 2); return t;
+}

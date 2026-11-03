@@ -8,7 +8,8 @@
   "requer": { "opcional": ["ELEVENLABS_API_KEY"] },
   "provedores": {
     "elevenlabs": "Tempos por caractere direto da API. Textos longos são divididos em blocos com previous_text/next_text.",
-    "kokoro": "Uma síntese por fala (pausa por pontuação) + Whisper para o tempo de cada palavra."
+    "kokoro": "Uma síntese por fala (pausa por pontuação) + Whisper para o tempo de cada palavra.",
+    "arquivo": "config.voz_arquivo = narração já gerada fora do motor (ex.: ElevenLabs pelo conector MCP, sem chave no .env), caminho relativo à pasta do vídeo; Whisper dá o tempo de cada palavra. Opcional: voz_arquivo_nome, voz_arquivo_voice_id, voz_arquivo_modelo."
   },
   "como_trocar": "Para outro provedor (ex.: Azure, OpenAI), crie uma função viaX(ctx, falas, voz, pastaVoz) em run.mjs que escreva os mesmos 4 arquivos de saída e aceite um prefixo novo em config.voz (ex.: 'azure:...')."
 }

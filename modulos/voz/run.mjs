@@ -28,7 +28,8 @@ export async function executar(estagio, ctx) {
   const r = ctx.roteiro();
   const cfg = ctx.config;
   const pastaVoz = garantirPasta(path.join(ctx.pasta, 'voz'));
-  const voz = await resolverVoz(cfg.voz, { log: ctx.log });
+  // voz_arquivo: narração já gerada fora do motor (ex.: ElevenLabs pelo conector, sem chave no .env)
+  const voz = cfg.voz_arquivo ? { provedor: 'arquivo', nome: cfg.voz_arquivo_nome || path.basename(cfg.voz_arquivo), voice_id: cfg.voz_arquivo_voice_id || null } : await resolverVoz(cfg.voz, { log: ctx.log });
   const falas = r.falas.map((f) => ({
     id: f.id,
     textoFalado: String(f.fala || f.texto).trim(),
@@ -38,6 +39,7 @@ export async function executar(estagio, ctx) {
   ctx.progresso('voz', 5, `Voz: ${voz.nome} (${voz.provedor})`);
   let meta;
   if (voz.provedor === 'elevenlabs') meta = await viaElevenLabs(ctx, falas, voz, pastaVoz);
+  else if (voz.provedor === 'arquivo') meta = await viaArquivo(ctx, falas, voz, pastaVoz);
   else meta = await viaKokoro(ctx, falas, voz, pastaVoz);
 
   // verificação de pronúncia (Whisper) — avisa, não bloqueia
@@ -161,6 +163,29 @@ function distribuirLegenda(f, faladas, fi, ff, palavrasT) {
   const tot = pesos.reduce((x, y) => x + y, 0) || 1;
   let t = a;
   f.legenda.forEach((w, i) => { const d = ((b - a) * pesos[i]) / tot; palavrasT.push({ texto: w, inicio: r4(t), fim: r4(t + d), fala: f.id }); t += d; });
+}
+
+// ---------- Arquivo pronto (narração gerada fora do motor) + Whisper ----------
+async function viaArquivo(ctx, falas, voz, pastaVoz) {
+  const cfg = ctx.config;
+  const origem = path.isAbsolute(cfg.voz_arquivo) ? cfg.voz_arquivo : path.join(ctx.pasta, cfg.voz_arquivo);
+  if (!existe(origem)) throw new Error(`voz_arquivo não encontrado: ${origem}`);
+  const wav = path.join(pastaVoz, 'narracao.wav');
+  ctx.progresso('voz', 15, `Arquivo: ${path.basename(origem)}`);
+  const c = rodarSync('ffmpeg', ['-y', '-v', 'error', '-i', origem, '-ar', '48000', '-ac', '1', '-c:a', 'pcm_s16le', wav]);
+  if (c.codigo !== 0) throw new Error(`ffmpeg: ${c.erro.slice(0, 300)}`);
+  ctx.progresso('voz', 50, 'Alinhando palavras (Whisper)');
+  const arqAl = path.join(pastaVoz, 'falas_alinhar.json');
+  gravarJSON(arqAl, falas.map((f) => ({ id: f.id, falado: f.falado, legenda: f.legenda })));
+  const a = python([path.join(AQUI, 'alinhar.py'), '--audio', wav, '--falas', arqAl, '--saida', path.join(pastaVoz, 'palavras.json'), '--modelo', cfg.whisper_modelo || 'small']);
+  if (a.codigo !== 0) throw new Error(`Alinhamento falhou: ${(a.erro || a.saida).split('\n').filter(Boolean).slice(-3).join(' | ')}`);
+  const pal = lerJSON(path.join(pastaVoz, 'palavras.json'));
+  const tempos = falas.map((f) => {
+    const ws = pal.filter((w) => w.fala === f.id);
+    return { id: f.id, inicio: r4(Math.min(...ws.map((w) => w.inicio))), fim: r4(Math.max(...ws.map((w) => w.fim))) };
+  });
+  gravarJSON(path.join(pastaVoz, 'falas.json'), tempos);
+  return { provedor: 'arquivo', voz, modelo: cfg.voz_arquivo_modelo || null, duracao: ffprobeDuracao(wav), caracteres: 0, criado_em: agora(), arquivo: 'narracao.wav', origem: path.basename(origem), alinhamento: JSON.parse(a.saida.trim().split('\n').pop() || '{}') };
 }
 
 // ---------- Kokoro (offline) ----------

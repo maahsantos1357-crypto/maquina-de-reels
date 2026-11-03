@@ -29,6 +29,12 @@ export const POSES = {
   comemorando: { bracoE: { frente: 15, lado: 150, cotovelo: 10 }, bracoD: { frente: 15, lado: 150, cotovelo: 10 }, cabeca: { inclina: -12 } },
   sentado: { quadrilY: 0.49, pernaE: { frente: 88, joelho: 88 }, pernaD: { frente: 88, joelho: 88 }, bracoE: { frente: 40, lado: 6, cotovelo: 50 }, bracoD: { frente: 40, lado: 6, cotovelo: 50 } },
   sentado_digitando: { quadrilY: 0.49, tronco: { inclina: 8 }, cabeca: { inclina: 14 }, pernaE: { frente: 88, joelho: 88 }, pernaD: { frente: 88, joelho: 88 }, bracoE: { frente: 55, lado: 10, cotovelo: 60 }, bracoD: { frente: 55, lado: 10, cotovelo: 60 } },
+  // deitada de costas: use com o grupo girado (grupo.rotation.x = -Math.PI / 2) ou dentro de um contêiner na cama
+  deitada: { cabeca: { inclina: 4, lado: 4 }, bracoE: { frente: 48, lado: 2, cotovelo: 72 }, bracoD: { frente: 34, lado: 2, cotovelo: 58 }, pernaE: { frente: 22, joelho: 34 }, pernaD: { frente: 12, joelho: 22 } },
+  // sentada na cama segurando algo junto ao peito (porta-retrato, livro)
+  sentada_segurando: { quadrilY: 0.49, cabeca: { inclina: 20, lado: 8 }, pernaE: { frente: 88, joelho: 88 }, pernaD: { frente: 88, joelho: 88 }, bracoE: { frente: 42, lado: 8, cotovelo: 80 }, bracoD: { frente: 42, lado: 8, cotovelo: 80 } },
+  abracando: { tronco: { inclina: 6 }, bracoE: { frente: 78, lado: 22, gira: 30, cotovelo: 70 }, bracoD: { frente: 78, lado: 22, gira: -30, cotovelo: 70 } },
+  bracos_abertos: { cabeca: { inclina: -6 }, bracoE: { frente: 30, lado: 62, cotovelo: 12 }, bracoD: { frente: 30, lado: 62, cotovelo: 12 } },
   duvida: { cabeca: { lado: 12, inclina: -4 }, bracoE: { frente: 25, lado: 30, gira: 40, cotovelo: 70 }, bracoD: { frente: 25, lado: 30, gira: -40, cotovelo: 70 } },
 };
 
@@ -360,4 +366,22 @@ export function caminhar(pontos, t, t0, t1, { passoPorMetro = 0.75 } = {}) {
   const pos = curva.getPointAt(uu);
   const tan = curva.getTangentAt(Math.min(0.999, Math.max(0.001, uu)));
   return { pos: [pos.x, 0, pos.z], rumo: Math.atan2(tan.x, tan.z), fase: uu * comp * passoPorMetro, andando: u > 0 && u < 1 };
+}
+
+// Transforma um personagem em "Espírito"/aparição de luz: todos os materiais viram luz translúcida da cor dada
+// (sem sombras, sem tone mapping). Use num personagem novo (não no corpo original): crie um segundo com os mesmos traços.
+// Devolve { opacidade(x), cor(c) } para animar.
+export function virarEspirito(p, { cor = '#8fd3ff', opacidade = 0.55, brilho = 1.0 } = {}) {
+  const mats = [];
+  p.grupo.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = false; o.receiveShadow = false;
+    const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(cor).multiplyScalar(brilho), transparent: true, opacity: opacidade, depthWrite: false, toneMapped: false, fog: false });
+    o.material = m; o.renderOrder = 2; mats.push(m);
+  });
+  const ctl = {
+    opacidade(x) { for (const m of mats) { m.opacity = x; } p.grupo.visible = x > 0.003; return ctl; },
+    cor(c, b = brilho) { for (const m of mats) m.color.set(c).multiplyScalar(b); return ctl; },
+  };
+  return ctl;
 }
