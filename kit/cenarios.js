@@ -1283,3 +1283,154 @@ export function painelAviao({ largura = 1.6, altura = 0.9, numeros = true } = {}
   g.userData.enquadramentos = { geral: { pos: [0, 0, distPara(largura + 0.3, 34)], alvo: [0, 0, 0], fov: 34 } };
   return g;
 }
+
+// ---------------- Comércio e Brasil ----------------
+// Navio graneleiro (bulk carrier) com porões abertos e montes de grão; proa para +X, ~comprimento m.
+// userData.encher(x) sobe os montes de grão (0–1); userData.esteira(t, ligada) anima o jorro do carregador.
+// texto: escrito no casco dos dois lados (ex.: 'EXPORTAÇÃO · SOJA'). Enquadramentos 'geral', 'poroes', 'casco'.
+export function navioGraneleiro({ comprimento = 9, corCasco = '#b8322a', corCostado = '#1e2a36', corGrao = '#e5b648', texto = '', nome = '', poroes = 5, carregador = true } = {}) {
+  const g = novo('navio-graneleiro');
+  const L = comprimento, B = L * 0.16, H = L * 0.085;
+  // casco: forma com proa afilada, extrudada na vertical
+  const sh = new THREE.Shape();
+  sh.moveTo(-L / 2, -B / 2); sh.lineTo(L / 2 - B * 0.9, -B / 2); sh.quadraticCurveTo(L / 2 + B * 0.15, -B * 0.35, L / 2 + B * 0.2, 0);
+  sh.quadraticCurveTo(L / 2 + B * 0.15, B * 0.35, L / 2 - B * 0.9, B / 2); sh.lineTo(-L / 2, B / 2); sh.closePath();
+  const extr = (h, cor, y) => { const geo = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 }); geo.rotateX(-Math.PI / 2); const ms = new THREE.Mesh(geo, mat.plastico(cor)); ms.position.y = y; return sombrear(ms); };
+  g.add(extr(H * 0.45, corCasco, 0));
+  g.add(extr(H * 0.55, corCostado, H * 0.45));
+  const conves = extr(0.03, '#7c8790', H);
+  g.add(conves);
+  // texto no casco (dois lados)
+  if (texto || nome) {
+    for (const s of [1, -1]) {
+      const placa = telaCanvas(L * 0.5, H * 0.32, (c, w, h) => {
+        c.clearRect(0, 0, w, h);
+        escrever(c, texto || nome, w / 2, h * 0.72, { tam: h * 0.62, peso: 900, cor: '#ffffff', alinhar: 'center', larguraMax: w * 0.96 });
+      }, { fundo: 'rgba(0,0,0,0)', emissivo: 0.25, pxPorUnidade: 260 });
+      placa.material.transparent = true;
+      placa.position.set(-L * 0.04, H * 0.72, s * (B / 2 + 0.025)); if (s < 0) placa.rotation.y = Math.PI;
+      g.add(placa);
+    }
+  }
+  // superestrutura branca na popa (-X) com chaminé
+  const sup = caixa(B * 0.75, H * 1.6, B * 0.92, { raio: 0.04, cor: '#f2f1ec' }); sup.position.set(-L / 2 + B * 0.5, H + H * 0.8, 0); g.add(sombrear(sup));
+  const ponteC = caixa(B * 0.8, H * 0.35, B * 1.06, { raio: 0.03, cor: '#f2f1ec' }); ponteC.position.set(-L / 2 + B * 0.55, H + H * 1.75, 0); g.add(ponteC);
+  const jan = caixa(0.02, H * 0.14, B * 0.9, { raio: 0.005, cor: '#2c3a48' }); jan.position.set(-L / 2 + B * 0.97, H + H * 1.75, 0); g.add(jan);
+  const cham = caixa(B * 0.22, H * 0.7, B * 0.22, { raio: 0.02, cor: corCasco }); cham.position.set(-L / 2 + B * 0.25, H + H * 2.1, 0); g.add(cham);
+  // porões abertos com braçola e monte de grão
+  const montes = [];
+  const passo = (L * 0.72) / poroes; const x0 = -L / 2 + B * 1.25 + passo / 2;
+  for (let i = 0; i < poroes; i++) {
+    const x = x0 + i * passo;
+    const borda = new THREE.Group();
+    const lw = passo * 0.78, lp = B * 0.72, alt = H * 0.18;
+    for (const [dx, dz, w, p] of [[0, lp / 2, lw, 0.05], [0, -lp / 2, lw, 0.05], [lw / 2, 0, 0.05, lp], [-lw / 2, 0, 0.05, lp]]) {
+      const b = caixa(w, alt, p, { raio: 0.01, cor: '#3a6b45' }); b.position.set(dx, alt / 2, dz); borda.add(b);
+    }
+    const fundo = caixa(lw, 0.02, lp, { raio: 0.005, cor: '#2a2f33' }); fundo.position.y = 0.01; borda.add(fundo);
+    borda.position.set(x, H + 0.03, 0); g.add(borda);
+    const monte = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat.fosco(corGrao));
+    monte.scale.set(lw * 0.48, 0.001, lp * 0.46); monte.position.set(x, H + 0.04, 0); monte.castShadow = true; g.add(monte);
+    monte.userData.alt = H * 0.75; montes.push(monte);
+  }
+  // carregador de navio (shiploader) no cais, lado +Z, com jorro de grão
+  let jorro = null;
+  if (carregador) {
+    const torre = caixa(0.18, H * 3.2, 0.18, { raio: 0.02, cor: '#e8b021' }); torre.position.set(x0 + passo, H * 1.6, B / 2 + 1.0); g.add(sombrear(torre));
+    const braco = caixa(0.12, 0.12, 1.25, { raio: 0.02, cor: '#e8b021' }); braco.position.set(x0 + passo, H * 3.1, B / 2 + 0.45); g.add(sombrear(braco));
+    const bico = cilindro(0.06, 0.25, { cor: '#555' }); bico.position.set(x0 + passo, H * 2.95, B * 0.05); g.add(bico);
+    jorro = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.07, 1, 12, 1, true), new THREE.MeshStandardMaterial({ color: corGrao, roughness: 0.9, transparent: true, opacity: 0.9 }));
+    jorro.position.set(x0 + passo, (H * 2.85 + H) / 2, 0); jorro.scale.y = H * 1.85; g.add(jorro);
+  }
+  g.userData.encher = (x) => { for (const [i, mo] of montes.entries()) { const k = clamp(x * 1.3 - i * 0.06); mo.scale.y = 0.001 + mo.userData.alt * k; } };
+  g.userData.esteira = (t, ligada = true) => { if (!jorro) return; jorro.visible = ligada; jorro.rotation.y = t * 6; };
+  g.userData.encher(1);
+  g.userData.altura = H;
+  g.userData.enquadramentos = {
+    geral: { pos: [L * 0.25, H * 3.2, L * 1.05], alvo: [0, H * 1.2, 0], fov: 36 },
+    poroes: { pos: [x0 + passo * 2.2, H * 5.5, B * 2.6], alvo: [x0 + passo * 1.5, H, 0], fov: 38 },
+    casco: { pos: [0, H * 0.9, B * 4.5], alvo: [-L * 0.04, H * 0.7, 0], fov: 34 },
+  };
+  return g;
+}
+
+// Contorno simplificado do Brasil (lon, lat) — maquete, não cartografia.
+const CONTORNO_BRASIL = [[-69.9,1.1],[-67.0,1.9],[-64.0,4.0],[-60.8,5.2],[-59.9,2.5],[-56.5,1.9],[-54.0,2.2],[-51.6,4.2],[-50.0,1.8],[-48.5,-0.8],[-44.5,-2.5],[-41.0,-2.9],[-37.0,-4.8],[-35.0,-5.5],[-34.8,-7.5],[-35.2,-9.4],[-37.0,-11.0],[-38.9,-13.5],[-39.1,-17.5],[-40.0,-20.0],[-41.0,-22.0],[-43.2,-23.0],[-46.0,-24.0],[-48.5,-26.0],[-48.7,-28.5],[-50.0,-30.5],[-51.5,-32.0],[-53.4,-33.7],[-53.6,-31.5],[-55.5,-30.2],[-57.6,-30.2],[-56.0,-28.0],[-54.6,-26.0],[-54.3,-24.0],[-55.6,-22.6],[-57.8,-22.1],[-58.2,-20.0],[-57.5,-18.0],[-60.2,-16.3],[-60.5,-13.8],[-63.0,-12.6],[-65.3,-10.9],[-66.6,-9.9],[-69.5,-11.0],[-70.6,-9.5],[-73.0,-9.4],[-73.9,-7.3],[-72.8,-5.2],[-70.0,-4.2],[-69.6,-1.0]];
+const RIOS_BRASIL = {
+  amazonas: [[-70,-4.2],[-66,-3.4],[-62,-3.3],[-58,-3.0],[-55,-2.3],[-52,-1.6],[-50,-0.5]],
+  saoFrancisco: [[-46.2,-20.2],[-45,-17],[-43.6,-14],[-42.8,-11.5],[-40.5,-9.4],[-38.5,-9.8],[-36.6,-10.5]],
+  parana: [[-47.5,-19.6],[-50.5,-20.6],[-52.6,-22.4],[-54,-24.2],[-54.6,-25.6]],
+  tocantins: [[-48.3,-15.5],[-48.6,-12],[-48.3,-8],[-49.2,-4.5],[-49.5,-1.6]],
+};
+// Mapa do Brasil em maquete: placa de oceano, país extrudado, rios (emissivos), campos, plataforma de petróleo,
+// fábricas e placa 'BRASIL'. largura = extensão leste-oeste em metros.
+// userData.mostrar({campos, petroleo, industria, rios}) (0–1 cada); userData.acender(x) tinge o país de verde vivo;
+// userData.ponto(lon, lat) → Vector3 local no topo do mapa. Enquadramentos 'geral', 'sudeste', 'norte'.
+export function mapaBrasil({ largura = 8, espessura = 0.22, corTerra = '#cfd8b4', corVivo = '#2fbf5b', corOceano = '#8fc1de', placa = 'BRASIL' } = {}) {
+  const g = novo('mapa-brasil');
+  const k = largura / 39; const cLon = -54, cLat = -14.3;
+  const xy = (lon, lat) => [(lon - cLon) * k, -(lat - cLat) * k]; // x leste, z sul
+  const ponto = (lon, lat, y = espessura) => { const [x, z] = xy(lon, lat); return new THREE.Vector3(x, y, z); };
+  const oceano = caixa(largura * 1.35, 0.06, largura * 1.35, { raio: 0.03, cor: corOceano }); oceano.position.y = 0.03; g.add(sombrear(oceano));
+  const sh = new THREE.Shape();
+  CONTORNO_BRASIL.forEach(([lo, la], i) => { const [x, z] = xy(lo, la); if (i) sh.lineTo(x, -z); else sh.moveTo(x, -z); });
+  sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: espessura - 0.06, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.03, bevelSegments: 3 });
+  geo.rotateX(-Math.PI / 2);
+  const matTerra = new THREE.MeshStandardMaterial({ color: corTerra, roughness: 0.85 });
+  const terra = new THREE.Mesh(geo, matTerra); terra.position.y = 0.06; g.add(sombrear(terra));
+  // rios
+  const rios = new THREE.Group(); const matRio = new THREE.MeshStandardMaterial({ color: '#2f8fe0', emissive: '#3aa0ff', emissiveIntensity: 0.0, roughness: 0.3 });
+  for (const pts of Object.values(RIOS_BRASIL)) {
+    const curva = new THREE.CatmullRomCurve3(pts.map(([lo, la]) => ponto(lo, la, espessura + 0.025)));
+    rios.add(new THREE.Mesh(new THREE.TubeGeometry(curva, 60, 0.035 * (largura / 8), 8), matRio));
+  }
+  g.add(rios);
+  // campos (lavouras em faixas) no Centro-Oeste e Sul
+  const campos = new THREE.Group(); const rnd = mulberry32(17);
+  for (const [lo, la] of [[-55.5,-12.5],[-52.5,-16],[-49.5,-17.8],[-53.5,-20],[-51.5,-24.5],[-47,-12],[-56.5,-15.5],[-50.5,-28.5]]) {
+    for (let i = 0; i < 4; i++) {
+      const f = caixa(0.32 * (largura / 8), 0.03, 0.08 * (largura / 8), { raio: 0.01, cor: i % 2 ? '#5aa13c' : '#9cc251' });
+      f.position.copy(ponto(lo + (rnd() - 0.5) * 0.6, la + i * 0.45 - 0.7, espessura + 0.02)); f.rotation.y = 0.2; campos.add(f);
+    }
+  }
+  g.add(campos);
+  // indústria no Sudeste (galpões + chaminés)
+  const industria = new THREE.Group();
+  for (const [lo, la, s] of [[-46.6,-23.4,1],[-47.5,-22.7,0.8],[-43.6,-22.6,0.85],[-49.3,-25.2,0.7],[-44,-19.9,0.75]]) {
+    const u = new THREE.Group(); const sc = s * (largura / 8);
+    const galpao = caixa(0.26 * sc, 0.16 * sc, 0.18 * sc, { raio: 0.01, cor: '#e9e4da' }); galpao.position.y = 0.08 * sc; u.add(galpao);
+    const ch = cilindro(0.025 * sc, 0.34 * sc, { cor: '#b3412f' }); ch.position.set(0.08 * sc, 0.17 * sc, -0.04 * sc); u.add(ch);
+    u.position.copy(ponto(lo, la, espessura)); industria.add(sombrear(u));
+  }
+  g.add(industria);
+  // plataforma de petróleo no pré-sal (no mar, ao largo do Rio)
+  const petroleo = new THREE.Group(); { const sc = largura / 8;
+    const conv = caixa(0.32 * sc, 0.05 * sc, 0.32 * sc, { raio: 0.01, cor: '#e8b021' }); conv.position.y = 0.28 * sc; petroleo.add(conv);
+    for (const [a, b] of [[1,1],[1,-1],[-1,1],[-1,-1]]) { const p = cilindro(0.025 * sc, 0.28 * sc, { cor: '#5e646c' }); p.position.set(a * 0.12 * sc, 0.14 * sc, b * 0.12 * sc); petroleo.add(p); }
+    const torre = cilindro(0.03 * sc, 0.42 * sc, { cor: '#c0392b', rTopo: 0.008 * sc }); torre.position.set(-0.06 * sc, 0.51 * sc, 0); petroleo.add(torre);
+    const chama = new THREE.Mesh(new THREE.ConeGeometry(0.035 * sc, 0.1 * sc, 10), new THREE.MeshBasicMaterial({ color: '#ffb02e', toneMapped: false })); chama.position.set(0.15 * sc, 0.4 * sc, 0); petroleo.add(chama);
+    petroleo.position.copy(ponto(-40.6, -24.2, 0.06)); }
+  g.add(sombrear(petroleo));
+  // placa
+  let placaM = null;
+  if (placa) {
+    placaM = telaCanvas(largura * 0.32, largura * 0.08, (c, w, h) => { c.fillStyle = '#1d2026'; c.fillRect(0, 0, w, h); escrever(c, placa, w / 2, h * 0.72, { tam: h * 0.6, peso: 900, cor: '#ffffff', alinhar: 'center' }); }, { emissivo: 0.6, pxPorUnidade: 260 });
+    placaM.position.copy(ponto(-62, -24, 0.06)).add(new THREE.Vector3(0, largura * 0.045, 0)); placaM.rotation.x = -0.35; g.add(placaM);
+  }
+  const corBase = new THREE.Color(corTerra), corV = new THREE.Color(corVivo);
+  g.userData.ponto = ponto;
+  g.userData.mostrar = ({ campos: c = 1, petroleo: p = 1, industria: i = 1, rios: r = 1 } = {}) => {
+    const esc = (grp, x) => { grp.visible = x > 0.01; for (const ch of grp.children) ch.scale.setScalar(Math.max(0.001, x)); };
+    esc(campos, c); esc(industria, i); esc(petroleo, p);
+    matRio.emissiveIntensity = 1.4 * r; rios.visible = true;
+  };
+  g.userData.acender = (x) => { matTerra.color.copy(corBase).lerp(corV, clamp(x)); matTerra.emissive = matTerra.emissive || new THREE.Color(); matTerra.emissive.copy(corV).multiplyScalar(0.25 * clamp(x)); };
+  g.userData.mostrar({ campos: 1, petroleo: 1, industria: 1, rios: 0.2 });
+  g.userData.enquadramentos = {
+    geral: { pos: [0, largura * 1.25, largura * 1.05], alvo: [0, 0, largura * 0.05], fov: 38 },
+    sudeste: { pos: [xy(-45, -26)[0], largura * 0.45, xy(-45, -26)[1] + largura * 0.45], alvo: [xy(-45, -22)[0], 0.2, xy(-45, -22)[1]], fov: 36 },
+    norte: { pos: [xy(-58, -8)[0], largura * 0.5, xy(-58, -8)[1] + largura * 0.4], alvo: [xy(-58, -3)[0], 0.2, xy(-58, -3)[1]], fov: 36 },
+  };
+  return g;
+}

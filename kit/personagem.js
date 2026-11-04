@@ -68,11 +68,12 @@ export function criarCapacete({ cor = '#eef1f4', corFaixa = null, viseira = '#0d
 // barba ('cheia'|'curta'|'cavanhaque'|'bigode'), oculos (true|'redondo'|'sol'), paleto (cor do terno) + camisa + gravata.
 // Uniformes: traje 'macacao' (piloto/mecânico: peça única em corTraje, faixas em corFaixa no peito, braços e pernas, gola,
 // numero no peito, luvas e botas). acessorio 'capacete' (corAcessorio + corCapaceteFaixa; esconde cabelo, barba e óculos),
-// 'bone' (boné de equipe na corAcessorio), 'gorro', 'mochila'.
+// 'bone' (boné de equipe na corAcessorio), 'gorro', 'mochila', 'chapeu_palha' (agricultor; corAcessorio = fita), 'cartola' (corAcessorio = fita).
+// estampa 'xadrez' (camisa xadrez na cor `roupa` com faixas em `corEstampa`).
 export function criarPersonagem({ pele = null, roupa = null, calca = null, sapato = '#f2f2f2', cabelo = 'curto', corCabelo = '#23180f', acessorio = null, corAcessorio = '#1f2228', escala = 1, semente = 1,
   barba = null, corBarba = null, oculos = null, corOculos = '#1d1f24', paleto = null, camisa = '#f4f4f2', gravata = null,
   traje = null, corTraje = null, corFaixa = null, numero = null, corNumero = null, luvas = null, botas = null, corCapaceteFaixa = null, viseira = '#0d1014',
-  listras = null, corCalcao = null, corMeiao = null, corGola = null } = {}) {
+  listras = null, corCalcao = null, corMeiao = null, corGola = null, estampa = null, corEstampa = '#f4f2ee' } = {}) {
   const P = pal();
   const peles = P.pele || ['#c68a5b']; const roupas = P.roupa || ['#1f2228']; const calcas = P.calca || ['#2a3a5e'];
   const macacao = traje === 'macacao';
@@ -106,6 +107,16 @@ export function criarPersonagem({ pele = null, roupa = null, calca = null, sapat
       const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
       mRoupa = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.65 });
     }
+  }
+  if (estampa === 'xadrez' && !macacao && !futebol && !paleto) {
+    // camisa xadrez (agricultor, lenhador): cor base + faixas cruzadas translúcidas em corEstampa
+    const base = roupa || roupas[semente % roupas.length];
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = base; g.fillRect(0, 0, 128, 128); g.globalAlpha = 0.45; g.fillStyle = corEstampa;
+    for (let i = 0; i < 4; i++) { g.fillRect(i * 32 + 6, 0, 12, 128); g.fillRect(0, i * 32 + 6, 128, 12); }
+    g.globalAlpha = 0.35; g.fillStyle = '#1a1c20'; for (let i = 0; i < 4; i++) { g.fillRect(i * 32 + 24, 0, 3, 128); g.fillRect(0, i * 32 + 24, 128, 3); }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1.5, 1.5);
+    mRoupa = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 });
   }
   const mCalca = macacao ? mRoupa : futebol ? m(corCalcao || '#111111', 0.6) : m(calca || calcas[semente % calcas.length], 0.75);
   const mMeiao = futebol ? m(corMeiao || corCalcao || '#111111', 0.6) : mCalca;
@@ -156,6 +167,21 @@ export function criarPersonagem({ pele = null, roupa = null, calca = null, sapat
   if (acessorio === 'bone') {
     const b1 = malha(new THREE.SphereGeometry(0.126, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), mAc); b1.position.y = 0.11; cabeca.add(b1);
     const aba = malha(new THREE.CylinderGeometry(0.1, 0.1, 0.012, 24, 1, false, -Math.PI / 2, Math.PI), mAc); aba.position.set(0, 0.12, 0.08); aba.scale.z = 1.3; cabeca.add(aba);
+  }
+  if (acessorio === 'chapeu_palha') {
+    // chapéu de palha de aba larga (agricultor); corAcessorio = fita (padrão marrom-escuro)
+    const palha = new THREE.MeshStandardMaterial({ color: '#e0c37e', roughness: 0.95 });
+    const aba = malha(new THREE.CylinderGeometry(0.235, 0.245, 0.014, 40), palha); aba.position.y = 0.155; aba.rotation.x = -0.06; cabeca.add(aba);
+    const copa = malha(new THREE.CylinderGeometry(0.108, 0.128, 0.11, 32), palha); copa.position.y = 0.215; cabeca.add(copa);
+    const topo = malha(new THREE.SphereGeometry(0.108, 24, 8, 0, Math.PI * 2, 0, Math.PI * 0.3), palha); topo.position.y = 0.24; topo.scale.y = 0.6; cabeca.add(topo);
+    const fita = malha(new THREE.CylinderGeometry(0.13, 0.13, 0.026, 32), m(corAcessorio === '#1f2228' ? '#5a3a1e' : corAcessorio, 0.7)); fita.position.y = 0.175; cabeca.add(fita);
+  }
+  if (acessorio === 'cartola') {
+    // cartola preta com fita (figura simbólica do "rico"); corAcessorio = cor da fita
+    const preto = m('#16171b', 0.4);
+    const aba = malha(new THREE.CylinderGeometry(0.175, 0.175, 0.014, 36), preto); aba.position.y = 0.17; cabeca.add(aba);
+    const copa = malha(new THREE.CylinderGeometry(0.115, 0.108, 0.22, 32), preto); copa.position.y = 0.285; cabeca.add(copa);
+    const fita = malha(new THREE.CylinderGeometry(0.111, 0.111, 0.035, 32), m(corAcessorio === '#1f2228' ? '#c0392b' : corAcessorio, 0.5)); fita.position.y = 0.2; cabeca.add(fita);
   }
   if (capacete) {
     const cap = criarCapacete({ cor: corAcessorio === '#1f2228' ? '#eef1f4' : corAcessorio, corFaixa: corCapaceteFaixa, viseira });
